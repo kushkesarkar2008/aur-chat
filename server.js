@@ -3,12 +3,18 @@ const { Server } = require('socket.io');
 const app = express(), srv = http.createServer(app), io = new Server(srv);
 
 const FILE = 'data.json';
-const db = fs.existsSync(FILE) ? JSON.parse(fs.readFileSync(FILE)) : { users: {}, tokens: {}, msgs: [] };
-const save = () => fs.writeFileSync(FILE, JSON.stringify(db));
+let db = { users: {}, tokens: {}, msgs: [] }, col = null, timer;
+// With MONGODB_URI set (Render) data lives in MongoDB; without it (local) data lives in data.json
+const save = () => {
+  if (!col) return fs.writeFileSync(FILE, JSON.stringify(db));
+  clearTimeout(timer);
+  timer = setTimeout(() => col.replaceOne({ _id: 'main' }, { _id: 'main', data: db }, { upsert: true })
+    .catch(e => console.error('Mongo save failed:', e.message)), 300);
+};
 const hash = (p, s) => crypto.scryptSync(p, s, 32).toString('hex');
 const online = {}; // username -> Set of sockets
 const emitTo = (u, ev, d) => (online[u] || []).forEach(s => s.emit(ev, d));
-const pub = u => ({ username: u, online: !!(online[u] && online[u].size), lastSeen: db.users[u].lastSeen });
+const pub = u => ({ username: u, online: !!(online[u] && online[u].size), lastSeen: db.users[u].lastSeen, pic: db.users[u].pic || '', about: db.users[u].about || '' });
 
 app.use(express.json());
 app.use(express.static('public'));
@@ -72,6 +78,13 @@ io.on('connection', s => {
     if (changed) { save(); emitTo(peer, 'status', { with: me, status: 'read' }); }
   });
 
+  s.on('profile', ({ pic, about }) => {
+    if (typeof pic === 'string' && pic.length < 60000 && (pic === '' || pic.startsWith('data:image/'))) db.users[me].pic = pic;
+    if (typeof about === 'string') db.users[me].about = about.slice(0, 100);
+    save();
+    io.emit('presence', pub(me));
+  });
+
   s.on('typing', to => emitTo(to, 'typing', { from: me }));
 
   s.on('disconnect', () => {
@@ -80,4 +93,17 @@ io.on('connection', s => {
   });
 });
 
-srv.listen(process.env.PORT || 3000, () => console.log('AUR running on http://localhost:' + (process.env.PORT || 3000)));
+(async () => {
+  if (process.env.MONGODB_URI) {
+    const { MongoClient } = require('mongodb');
+    const client = await MongoClient.connect(process.env.MONGODB_URI);
+    col = client.db('aur').collection('state');
+    const d = await col.findOne({ _id: 'main' });
+    if (d) db = d.data;
+    console.log('Using MongoDB');
+  } else if (fs.existsSync(FILE)) {
+    db = JSON.parse(fs.readFileSync(FILE));
+    console.log('Using data.json');
+  }
+  srv.listen(process.env.PORT || 3000, () => console.log('AUR running on port ' + (process.env.PORT || 3000)));
+})();
