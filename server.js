@@ -7,7 +7,7 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { maxHttpBufferSize: 1e7 });
 
 const PORT = process.env.PORT || 10000;
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -16,134 +16,212 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-let state = { users: [], msgs: [] };
+// In-Memory Database Structure
+let data = {
+    users: {},     // { username: { password, salt, pic, about, online, lastSeen } }
+    tokens: {},    // { token: username }
+    msgs: [],      // [ { id, from, to, text, time, status, media } ]
+    statuses: []   // [ { id, user, time, kind, text, bg, mediaId } ]
+};
+
+let dbClient = null;
 let db = null;
-let stateCollection = null;
+let mediaCollection = null;
 
 async function connectDB() {
     if (MONGODB_URI) {
         try {
-            const client = new MongoClient(MONGODB_URI);
-            await client.connect();
-            db = client.db('aur');
-            stateCollection = db.collection('state');
-            console.log('Using MongoDB');
+            dbClient = new MongoClient(MONGODB_URI);
+            await dbClient.connect();
+            db = dbClient.db('aur');
+            mediaCollection = db.collection('media');
+            console.log('Connected to MongoDB Atlas');
 
-            const savedState = await stateCollection.findOne({ _id: 'main' });
+            const stateCol = db.collection('state');
+            const savedState = await stateCol.findOne({ _id: 'main' });
             if (savedState) {
-                state.users = savedState.users || [];
-                state.msgs = savedState.msgs || [];
+                data.users = savedState.users || {};
+                data.tokens = savedState.tokens || {};
+                data.msgs = savedState.msgs || [];
+                data.statuses = savedState.statuses || [];
             } else {
                 await saveStateToDB();
             }
         } catch (err) {
-            console.error('MongoDB error:', err);
+            console.error('MongoDB connection error:', err);
         }
     } else {
-        console.log('Running in memory mode');
+        console.log('Running in local memory mode (No MongoDB URI)');
     }
 }
 
 async function saveStateToDB() {
-    if (stateCollection) {
+    if (db) {
         try {
-            await stateCollection.updateOne(
+            await db.collection('state').updateOne(
                 { _id: 'main' },
-                { $set: { users: state.users, msgs: state.msgs } },
+                { $set: { users: data.users, tokens: data.tokens, msgs: data.msgs, statuses: data.statuses } },
                 { upsert: true }
             );
         } catch (err) {
-            console.error('Failed to save state:', err);
+            console.error('Failed to save state to MongoDB:', err);
         }
     }
 }
 
-function hashPassword(password) {
-    return crypto.createHash('sha256').update(password).digest('hex');
+// Password Hashing Helper
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+    return { hash, salt };
 }
 
-app.post('/api/signup', async (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+// --- Auth API (Aligned with index.html) ---
+app.post('/api/auth', async (req, res) => {
+    const { username, password, mode } = req.body || {};
+    const u = String(username || '').trim().toLowerCase();
+    const p = String(password || '');
 
-    const existingUser = state.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (existingUser) return res.status(400).json({ error: 'Username already exists' });
+    if (!u || !p) return res.json({ error: 'Username and password are required' });
 
-    const newUser = {
-        id: Buffer.from(username).toString('hex'),
-        username,
-        password: hashPassword(password),
-        online: false
-    };
-
-    state.users.push(newUser);
-    await saveStateToDB();
-    res.json({ user: { id: newUser.id, username: newUser.username } });
-});
-
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-    const user = state.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (!user || user.password !== hashPassword(password)) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+    if (mode === 'register') {
+        if (data.users[u]) return res.json({ error: 'Username already taken' });
+        const { hash, salt } = hashPassword(p);
+        data.users[u] = { password: hash, salt, pic: '', about: '', online: false, lastSeen: Date.now() };
+    } else {
+        const user = data.users[u];
+        if (!user) return res.json({ error: 'Invalid username or password' });
+        const { hash } = hashPassword(p, user.salt);
+        if (hash !== user.password) return res.json({ error: 'Invalid username or password' });
     }
-    res.json({ user: { id: user.id, username: user.username } });
+
+    const token = crypto.randomUUID();
+    data.tokens[token] = u;
+    await saveStateToDB();
+
+    res.json({ username: u, token });
 });
 
-app.get('/api/users', (req, res) => {
-    res.json(state.users.map(u => ({ id: u.id, username: u.username, online: u.online || false })));
+// Socket Helpers & Online Tracker
+const online = {}; // { username: Set(socketIds) }
+
+function emitTo(user, event, val) {
+    if (online[user]) {
+        online[user].forEach(sid => io.to(sid).emit(event, val));
+    }
+}
+
+// Socket.IO Middleware & Handlers
+io.use((socket, next) => {
+    const token = socket.handshake.auth && socket.handshake.auth.token;
+    const user = data.tokens[token];
+    if (!user || !data.users[user]) return next(new Error('Unauthorized'));
+    socket.user = user;
+    next();
 });
 
-app.get('/api/messages/:recipientId', (req, res) => {
-    const { recipientId } = req.params;
-    const msgs = state.msgs.filter(m => (m.sender === recipientId || m.recipient === recipientId));
-    res.json(msgs);
-});
+io.on('connection', socket => {
+    const me = socket.user;
+    online[me] = online[me] || new Set();
+    online[me].add(socket.id);
 
-const activeSockets = new Map();
+    data.users[me].online = true;
+    data.users[me].lastSeen = Date.now();
 
-io.on('connection', (socket) => {
-    socket.on('join', (userId) => {
-        activeSockets.set(socket.id, userId);
-        const user = state.users.find(u => u.id === userId);
-        if (user) {
-            user.online = true;
-            io.emit('users_updated');
+    // Broadcast presence update
+    io.emit('presence', { username: me, online: true, lastSeen: data.users[me].lastSeen, pic: data.users[me].pic, about: data.users[me].about });
+
+    // Send init state
+    const userList = {};
+    Object.keys(data.users).forEach(u => {
+        userList[u] = {
+            online: online[u] && online[u].size > 0,
+            lastSeen: data.users[u].lastSeen,
+            pic: data.users[u].pic,
+            about: data.users[u].about
+        };
+    });
+
+    const myMsgs = data.msgs.filter(m => m.from === me || m.to === me);
+    socket.emit('init', { users: userList, msgs: myMsgs });
+
+    // Mark sent messages delivered
+    data.msgs.forEach(m => {
+        if (m.to === me && m.status === 'sent') {
+            m.status = 'delivered';
+            emitTo(m.from, 'status', { with: me, status: 'delivered' });
         }
     });
 
-    socket.on('private_message', async (msgData) => {
-        state.msgs.push(msgData);
-        await saveStateToDB();
-        for (let [sockId, uId] of activeSockets.entries()) {
-            if (uId === msgData.recipient) {
-                io.to(sockId).emit('private_message', msgData);
-            }
+    socket.on('send', ({ to, text }) => {
+        if (!to || !data.users[to]) return;
+        const msg = {
+            id: crypto.randomUUID(),
+            from: me,
+            to,
+            text: String(text || '').slice(0, 2000),
+            time: Date.now(),
+            status: online[to] && online[to].size > 0 ? 'delivered' : 'sent'
+        };
+        data.msgs.push(msg);
+        saveStateToDB();
+
+        emitTo(to, 'msg', msg);
+        emitTo(me, 'msg', msg);
+    });
+
+    socket.on('read', peer => {
+        data.msgs.forEach(m => {
+            if (m.from === peer && m.to === me) m.status = 'read';
+        });
+        saveStateToDB();
+        emitTo(peer, 'status', { with: me, status: 'read' });
+    });
+
+    socket.on('typing', peer => emitTo(peer, 'typing', { from: me }));
+
+    socket.on('profile', ({ pic, about }) => {
+        if (data.users[me]) {
+            if (typeof pic === 'string') data.users[me].pic = pic;
+            if (typeof about === 'string') data.users[me].about = about.slice(0, 100);
+            saveStateToDB();
+            io.emit('presence', { username: me, online: true, lastSeen: data.users[me].lastSeen, pic: data.users[me].pic, about: data.users[me].about });
         }
     });
 
     socket.on('disconnect', () => {
-        const userId = activeSockets.get(socket.id);
-        if (userId) {
-            const user = state.users.find(u => u.id === userId);
-            if (user) {
-                user.online = false;
-                io.emit('users_updated');
+        if (online[me]) {
+            online[me].delete(socket.id);
+            if (online[me].size === 0) {
+                delete online[me];
+                data.users[me].online = false;
+                data.users[me].lastSeen = Date.now();
+                saveStateToDB();
+                io.emit('presence', { username: me, online: false, lastSeen: data.users[me].lastSeen, pic: data.users[me].pic, about: data.users[me].about });
             }
-            activeSockets.delete(socket.id);
         }
     });
 });
 
-// Load extras_server safely if it exists
+// Load Extras Server Module Safely
 try {
-    require('./extras_server')(app, io, state, saveStateToDB);
+    const extrasServer = require('./extras_server');
+    extrasServer({
+        app,
+        io,
+        db: () => data,
+        save: saveStateToDB,
+        online,
+        emitTo,
+        media: () => mediaCollection
+    });
+    console.log('Extras server module loaded successfully');
 } catch (e) {
-    console.log('Extras module not loaded or handled inline.');
+    console.error('Failed to load extras_server:', e);
 }
 
+// Start Server
 connectDB().then(() => {
     server.listen(PORT, () => {
-        console.log(`AUR running on port ${PORT}`);
+        console.log(`AUR server active on port ${PORT}`);
     });
 });
