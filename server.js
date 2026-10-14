@@ -1,156 +1,149 @@
-
-const express = require('express'), http = require('http'), crypto = require('crypto'), fs = require('fs');
+const express = require('express');
+const http = require('http');
 const { Server } = require('socket.io');
-const app = express(), srv = http.createServer(app), io = new Server(srv);
+const { MongoClient } = require('mongodb');
+const crypto = require('crypto');
+const path = require('path');
 
-const FILE = 'data.json';
-let db = { users: {}, tokens: {}, msgs: [] }, col = null, mediaCol = null, timer;
-// With MONGODB_URI set (Render) data lives in MongoDB; without it (local) data lives in data.json
-const save = () => {
-  if (!col) return fs.writeFileSync(FILE, JSON.stringify(db));
-  clearTimeout(timer);
-  timer = setTimeout(() => col.replaceOne({ _id: 'main' }, { _id: 'main', data: db }, { upsert: true })
-    .catch(e => console.error('Mongo save failed:', e.message)), 300);
-};
-const hash = (p, s) => crypto.scryptSync(p, s, 32).toString('hex');
-const online = {}; // username -> Set of sockets
-const emitTo = (u, ev, d) => (online[u] || []).forEach(s => s.emit(ev, d));
-const pub = u => ({ username: u, online: !!(online[u] && online[u].size), lastSeen: db.users[u].lastSeen, pic: db.users[u].pic || '', about: db.users[u].about || '' });
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-app.use(express.json());
-app.use(express.static('public'));
+const PORT = process.env.PORT || 10000;
+const MONGODB_URI = process.env.MONGODB_URI;
 
-// ---- file / image uploads (bytes in MongoDB "media" collection, or uploads/ folder locally) ----
-let mcol = null;
-if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
-const SAFE = /^(image\/(png|jpe?g|gif|webp)|video\/(mp4|webm)|audio\/(mpeg|ogg|wav|webm|mp4|aac))$/;
-app.post('/api/upload', express.raw({ type: '*/*', limit: '8mb' }), async (req, res) => {
-  if (!db.tokens[req.query.t] || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'Upload failed (max 8 MB)' });
-  const id = crypto.randomUUID();
-  const meta = { name: String(req.query.name || 'file').slice(0, 100), type: String(req.query.type || '').slice(0, 100), size: req.body.length };
-  try { if (mcol) await mcol.insertOne({ _id: id, data: req.body }); else fs.writeFileSync('uploads/' + id, req.body); }
-  catch (e) { return res.status(500).json({ error: 'Could not save file' }); }
-  (db.media = db.media || {})[id] = meta; save();
-  res.json({ id, ...meta });
-});
-app.get('/media/:id', async (req, res) => {
-  const meta = (db.media || {})[req.params.id];
-  if (!meta || !db.tokens[req.query.t]) return res.sendStatus(404);
-  let buf;
-  try {
-    if (mcol) { const d = await mcol.findOne({ _id: req.params.id }); buf = d.data.buffer.subarray(0, d.data.length()); }
-    else buf = fs.readFileSync('uploads/' + req.params.id);
-  } catch (e) { return res.sendStatus(404); }
-  const safe = SAFE.test(meta.type);
-  res.set({ 'Content-Type': safe ? meta.type : 'application/octet-stream', 'X-Content-Type-Options': 'nosniff',
-    'Content-Disposition': (safe ? 'inline' : 'attachment') + '; filename="' + encodeURIComponent(meta.name) + '"' });
-  res.send(Buffer.from(buf));
-});
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.post('/api/auth', (req, res) => {
-  const { password, mode } = req.body;
-  const u = String(req.body.username || '').trim().toLowerCase();
-  if (!/^[a-z0-9_]{3,20}$/.test(u) || !password || password.length < 4)
-    return res.status(400).json({ error: 'Username: 3-20 letters/numbers. Password: 4+ characters.' });
-  if (mode === 'register') {
-    if (db.users[u]) return res.status(400).json({ error: 'Username already taken' });
-    const salt = crypto.randomBytes(8).toString('hex');
-    db.users[u] = { salt, hash: hash(password, salt), lastSeen: Date.now() };
-    io.emit('presence', pub(u));
-  } else {
-    const x = db.users[u];
-    if (!x || x.hash !== hash(password, x.salt)) return res.status(401).json({ error: 'Wrong username or password' });
-  }
-  const token = crypto.randomBytes(16).toString('hex');
-  db.tokens[token] = u;
-  save();
-  res.json({ token, username: u });
-});
+let state = { users: [], msgs: [] };
+let db = null;
+let stateCollection = null;
 
-io.use((s, next) => {
-  const u = db.tokens[s.handshake.auth.token];
-  if (!u) return next(new Error('auth'));
-  s.user = u;
-  next();
-});
+async function connectDB() {
+    if (MONGODB_URI) {
+        try {
+            const client = new MongoClient(MONGODB_URI);
+            await client.connect();
+            db = client.db('aur');
+            stateCollection = db.collection('state');
+            console.log('Using MongoDB');
 
-require('./extras-server')({ app, io, db: () => db, save, online, emitTo, media: () => mediaCol });
+            const savedState = await stateCollection.findOne({ _id: 'main' });
+            if (savedState) {
+                state.users = savedState.users || [];
+                state.msgs = savedState.msgs || [];
+            } else {
+                await saveStateToDB();
+            }
+        } catch (err) {
+            console.error('MongoDB error:', err);
+        }
+    } else {
+        console.log('Running in memory mode');
+    }
+}
 
-io.on('connection', s => {
-  const me = s.user;
-  (online[me] = online[me] || new Set()).add(s);
+async function saveStateToDB() {
+    if (stateCollection) {
+        try {
+            await stateCollection.updateOne(
+                { _id: 'main' },
+                { $set: { users: state.users, msgs: state.msgs } },
+                { upsert: true }
+            );
+        } catch (err) {
+            console.error('Failed to save state:', err);
+        }
+    }
+}
 
-  // anything sent to me while offline is now "delivered"
-  const senders = new Set();
-  db.msgs.forEach(m => { if (m.to === me && m.status === 'sent') { m.status = 'delivered'; senders.add(m.from); } });
-  senders.forEach(f => emitTo(f, 'status', { with: me, status: 'delivered' }));
-  save();
+function hashPassword(password) {
+    return crypto.createHash('sha256').update(password).digest('hex');
+}
 
-  const users = {};
-  Object.keys(db.users).forEach(u => (users[u] = pub(u)));
-  s.emit('init', { users, msgs: db.msgs.filter(m => m.from === me || m.to === me),
-    stories: (db.stories || []).filter(x => Date.now() - x.time < 864e5) });
-  io.emit('presence', pub(me));
+app.post('/api/signup', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
-  s.on('send', ({ to, text, media }) => {
-    text = String(text || '').trim().slice(0, 2000);
-    const f = media && db.media && db.media[media];
-    if ((!text && !f) || !db.users[to]) return;
-    const m = { id: crypto.randomUUID(), from: me, to, text, time: Date.now(),
-      status: online[to] && online[to].size ? 'delivered' : 'sent' };
-    if (f) m.media = { id: media, ...f };
-    db.msgs.push(m);
-    save();
-    emitTo(to, 'msg', m);
-    emitTo(me, 'msg', m);
-  });
+    const existingUser = state.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (existingUser) return res.status(400).json({ error: 'Username already exists' });
 
-  s.on('read', peer => {
-    let changed = false;
-    db.msgs.forEach(m => { if (m.from === peer && m.to === me && m.status !== 'read') { m.status = 'read'; changed = true; } });
-    if (changed) { save(); emitTo(peer, 'status', { with: me, status: 'read' }); }
-  });
+    const newUser = {
+        id: Buffer.from(username).toString('hex'),
+        username,
+        password: hashPassword(password),
+        online: false
+    };
 
-  s.on('profile', ({ pic, about }) => {
-    if (typeof pic === 'string' && pic.length < 60000 && (pic === '' || pic.startsWith('data:image/'))) db.users[me].pic = pic;
-    if (typeof about === 'string') db.users[me].about = about.slice(0, 100);
-    save();
-    io.emit('presence', pub(me));
-  });
-
-  s.on('story:add', ({ kind, text, bg, media }) => {
-    text = String(text || '').slice(0, 300);
-    const img = kind === 'image';
-    if (img ? !(db.media && db.media[media] && db.media[media].type.startsWith('image/')) : !text.trim()) return;
-    const now = Date.now();
-    db.stories = (db.stories || []).filter(x => now - x.time < 864e5);
-    const st = { id: crypto.randomUUID(), user: me, kind: img ? 'image' : 'text', text, media: img ? media : '', time: now,
-      bg: /^#[0-9a-f]{6}$/i.test(bg) ? bg : '#128c7e' };
-    db.stories.push(st); save();
-    io.emit('story:new', st);
-  });
-
-  s.on('typing', to => emitTo(to, 'typing', { from: me }));
-
-  s.on('disconnect', () => {
-    online[me].delete(s);
-    if (!online[me].size) { db.users[me].lastSeen = Date.now(); save(); io.emit('presence', pub(me)); }
-  });
+    state.users.push(newUser);
+    await saveStateToDB();
+    res.json({ user: { id: newUser.id, username: newUser.username } });
 });
 
-(async () => {
-  if (process.env.MONGODB_URI) {
-    const { MongoClient } = require('mongodb');
-    const client = await MongoClient.connect(process.env.MONGODB_URI);
-    col = client.db('aur').collection('state');
-    mediaCol = client.db('aur').collection('media');
-    mcol = client.db('aur').collection('media');
-    const d = await col.findOne({ _id: 'main' });
-    if (d) db = d.data;
-    console.log('Using MongoDB');
-  } else if (fs.existsSync(FILE)) {
-    db = JSON.parse(fs.readFileSync(FILE));
-    console.log('Using data.json');
-  }
-  srv.listen(process.env.PORT || 3000, () => console.log('AUR running on port ' + (process.env.PORT || 3000)));
-})();
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    const user = state.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (!user || user.password !== hashPassword(password)) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    res.json({ user: { id: user.id, username: user.username } });
+});
+
+app.get('/api/users', (req, res) => {
+    res.json(state.users.map(u => ({ id: u.id, username: u.username, online: u.online || false })));
+});
+
+app.get('/api/messages/:recipientId', (req, res) => {
+    const { recipientId } = req.params;
+    const msgs = state.msgs.filter(m => (m.sender === recipientId || m.recipient === recipientId));
+    res.json(msgs);
+});
+
+const activeSockets = new Map();
+
+io.on('connection', (socket) => {
+    socket.on('join', (userId) => {
+        activeSockets.set(socket.id, userId);
+        const user = state.users.find(u => u.id === userId);
+        if (user) {
+            user.online = true;
+            io.emit('users_updated');
+        }
+    });
+
+    socket.on('private_message', async (msgData) => {
+        state.msgs.push(msgData);
+        await saveStateToDB();
+        for (let [sockId, uId] of activeSockets.entries()) {
+            if (uId === msgData.recipient) {
+                io.to(sockId).emit('private_message', msgData);
+            }
+        }
+    });
+
+    socket.on('disconnect', () => {
+        const userId = activeSockets.get(socket.id);
+        if (userId) {
+            const user = state.users.find(u => u.id === userId);
+            if (user) {
+                user.online = false;
+                io.emit('users_updated');
+            }
+            activeSockets.delete(socket.id);
+        }
+    });
+});
+
+// Load extras_server safely if it exists
+try {
+    require('./extras_server')(app, io, state, saveStateToDB);
+} catch (e) {
+    console.log('Extras module not loaded or handled inline.');
+}
+
+connectDB().then(() => {
+    server.listen(PORT, () => {
+        console.log(`AUR running on port ${PORT}`);
+    });
+});
