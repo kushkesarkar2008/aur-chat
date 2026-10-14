@@ -1,9 +1,10 @@
+
 const express = require('express'), http = require('http'), crypto = require('crypto'), fs = require('fs');
 const { Server } = require('socket.io');
 const app = express(), srv = http.createServer(app), io = new Server(srv);
 
 const FILE = 'data.json';
-let db = { users: {}, tokens: {}, msgs: [] }, col = null, timer;
+let db = { users: {}, tokens: {}, msgs: [] }, col = null, mediaCol = null, timer;
 // With MONGODB_URI set (Render) data lives in MongoDB; without it (local) data lives in data.json
 const save = () => {
   if (!col) return fs.writeFileSync(FILE, JSON.stringify(db));
@@ -18,6 +19,33 @@ const pub = u => ({ username: u, online: !!(online[u] && online[u].size), lastSe
 
 app.use(express.json());
 app.use(express.static('public'));
+
+// ---- file / image uploads (bytes in MongoDB "media" collection, or uploads/ folder locally) ----
+let mcol = null;
+if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
+const SAFE = /^(image\/(png|jpe?g|gif|webp)|video\/(mp4|webm)|audio\/(mpeg|ogg|wav|webm|mp4|aac))$/;
+app.post('/api/upload', express.raw({ type: '*/*', limit: '8mb' }), async (req, res) => {
+  if (!db.tokens[req.query.t] || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'Upload failed (max 8 MB)' });
+  const id = crypto.randomUUID();
+  const meta = { name: String(req.query.name || 'file').slice(0, 100), type: String(req.query.type || '').slice(0, 100), size: req.body.length };
+  try { if (mcol) await mcol.insertOne({ _id: id, data: req.body }); else fs.writeFileSync('uploads/' + id, req.body); }
+  catch (e) { return res.status(500).json({ error: 'Could not save file' }); }
+  (db.media = db.media || {})[id] = meta; save();
+  res.json({ id, ...meta });
+});
+app.get('/media/:id', async (req, res) => {
+  const meta = (db.media || {})[req.params.id];
+  if (!meta || !db.tokens[req.query.t]) return res.sendStatus(404);
+  let buf;
+  try {
+    if (mcol) { const d = await mcol.findOne({ _id: req.params.id }); buf = d.data.buffer.subarray(0, d.data.length()); }
+    else buf = fs.readFileSync('uploads/' + req.params.id);
+  } catch (e) { return res.sendStatus(404); }
+  const safe = SAFE.test(meta.type);
+  res.set({ 'Content-Type': safe ? meta.type : 'application/octet-stream', 'X-Content-Type-Options': 'nosniff',
+    'Content-Disposition': (safe ? 'inline' : 'attachment') + '; filename="' + encodeURIComponent(meta.name) + '"' });
+  res.send(Buffer.from(buf));
+});
 
 app.post('/api/auth', (req, res) => {
   const { password, mode } = req.body;
@@ -46,6 +74,8 @@ io.use((s, next) => {
   next();
 });
 
+require('./extras-server')({ app, io, db: () => db, save, online, emitTo, media: () => mediaCol });
+
 io.on('connection', s => {
   const me = s.user;
   (online[me] = online[me] || new Set()).add(s);
@@ -58,14 +88,17 @@ io.on('connection', s => {
 
   const users = {};
   Object.keys(db.users).forEach(u => (users[u] = pub(u)));
-  s.emit('init', { users, msgs: db.msgs.filter(m => m.from === me || m.to === me) });
+  s.emit('init', { users, msgs: db.msgs.filter(m => m.from === me || m.to === me),
+    stories: (db.stories || []).filter(x => Date.now() - x.time < 864e5) });
   io.emit('presence', pub(me));
 
-  s.on('send', ({ to, text }) => {
+  s.on('send', ({ to, text, media }) => {
     text = String(text || '').trim().slice(0, 2000);
-    if (!text || !db.users[to]) return;
+    const f = media && db.media && db.media[media];
+    if ((!text && !f) || !db.users[to]) return;
     const m = { id: crypto.randomUUID(), from: me, to, text, time: Date.now(),
       status: online[to] && online[to].size ? 'delivered' : 'sent' };
+    if (f) m.media = { id: media, ...f };
     db.msgs.push(m);
     save();
     emitTo(to, 'msg', m);
@@ -85,6 +118,18 @@ io.on('connection', s => {
     io.emit('presence', pub(me));
   });
 
+  s.on('story:add', ({ kind, text, bg, media }) => {
+    text = String(text || '').slice(0, 300);
+    const img = kind === 'image';
+    if (img ? !(db.media && db.media[media] && db.media[media].type.startsWith('image/')) : !text.trim()) return;
+    const now = Date.now();
+    db.stories = (db.stories || []).filter(x => now - x.time < 864e5);
+    const st = { id: crypto.randomUUID(), user: me, kind: img ? 'image' : 'text', text, media: img ? media : '', time: now,
+      bg: /^#[0-9a-f]{6}$/i.test(bg) ? bg : '#128c7e' };
+    db.stories.push(st); save();
+    io.emit('story:new', st);
+  });
+
   s.on('typing', to => emitTo(to, 'typing', { from: me }));
 
   s.on('disconnect', () => {
@@ -98,6 +143,8 @@ io.on('connection', s => {
     const { MongoClient } = require('mongodb');
     const client = await MongoClient.connect(process.env.MONGODB_URI);
     col = client.db('aur').collection('state');
+    mediaCol = client.db('aur').collection('media');
+    mcol = client.db('aur').collection('media');
     const d = await col.findOne({ _id: 'main' });
     if (d) db = d.data;
     console.log('Using MongoDB');
