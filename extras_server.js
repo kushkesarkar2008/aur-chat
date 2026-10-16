@@ -1,3 +1,4 @@
+
 // AUR extras (server): media upload/download, image+file messages, 24h statuses
 const crypto = require('crypto'), fs = require('fs'), path = require('path'), express = require('express');
 const DIR = 'uploads'; // used only when MongoDB is not configured (local testing)
