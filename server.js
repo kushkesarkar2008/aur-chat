@@ -20,7 +20,7 @@ const pub = u => ({ username: u, online: !!(online[u] && online[u].size), lastSe
 const contactsOf = u => {
   const set = new Set([u, ...(db.users[u].following || [])]);
   Object.keys(db.users).forEach(x => { if ((db.users[x].following || []).includes(u)) set.add(x); });
-  db.msgs.forEach(m => { if (m.from === u) set.add(m.to); if (m.to === u) set.add(m.from); });
+  db.msgs.forEach(m => { if ((m.hide || []).includes(u)) return; if (m.from === u) set.add(m.to); if (m.to === u) set.add(m.from); });
   return [...set].filter(x => db.users[x]);
 };
 const toAudience = u => contactsOf(u).forEach(x => emitTo(x, 'presence', pub(u)));
@@ -71,7 +71,7 @@ io.on('connection', s => {
 
   const users = {};
   contactsOf(me).forEach(u => (users[u] = pub(u)));
-  s.emit('init', { users, msgs: db.msgs.filter(m => m.from === me || m.to === me) });
+  s.emit('init', { users, msgs: db.msgs.filter(m => (m.from === me || m.to === me) && !(m.hide || []).includes(me)) });
   toAudience(me);
 
   s.on('send', ({ to, text }) => {
@@ -102,7 +102,7 @@ io.on('connection', s => {
 
   s.on('disconnect', () => {
     online[me].delete(s);
-    if (!online[me].size) { db.users[me].lastSeen = Date.now(); save(); toAudience(me); }
+    if (!online[me].size && db.users[me]) { db.users[me].lastSeen = Date.now(); save(); toAudience(me); }
   });
 });
 
