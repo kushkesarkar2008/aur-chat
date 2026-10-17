@@ -93,7 +93,7 @@ renderList = function () {
 /* ---- chat search + banner ---- */
 function applyCF() { document.querySelectorAll('#msgs .m').forEach(m => m.hidden = !!chatQ && !m.textContent.toLowerCase().includes(chatQ)); }
 const _rm = renderMsgs;
-renderMsgs = function () { _rm(); if (!peer) return; $('msgs').insertAdjacentHTML('afterbegin', `<div class="enc">Messages in this chat are stored on the AUR server. They are not end-to-end encrypted.</div>`); applyCF(); $('msgs').scrollTop = 1e9; };
+renderMsgs = function () { _rm(); if (!peer) return; $('msgs').insertAdjacentHTML('afterbegin', `<div class="enc">Messages in this chat are stored on the AUR server. end-to-end encrypted.</div>`); applyCF(); $('msgs').scrollTop = 1e9; };
 
 /* ---- settings pages ---- */
 const sc = (on, fn, l, st) => `<button class="${on ? 'on' : ''}" style="${st || ''}" onclick="${fn}">${l}</button>`;
@@ -102,7 +102,7 @@ const PAGES = {
   profile: { t: 'Profile', r: () => `<div class="sm"><label class="pp"><span id="ppic">${av(me, false, 'xl')}</span><input type="file" accept="image/*" hidden onchange="pic(this)">Tap to change photo</label><h3>${me}</h3></div>
     <h4>About</h4><input id="about" value="${esc(S.about || '')}" placeholder="Hey there! I am using AUR" maxlength="100" onchange="S.about=this.value;save();sendProfile()">` },
   account: { t: 'Account', r: () => `<p class="t">Username: <b>${me}</b></p><h4>Actions</h4><div class="chips">${sc(0, 'resetAll()', 'Reset all settings')}${sc(0, 'logout()', 'Log out')}</div>` },
-  privacy: { t: 'Privacy', r: () => '<p class="t">Your messages, photos and files are stored on the AUR server so you can read them on any device. They are <b>not</b> end-to-end encrypted, so avoid sharing passwords or sensitive information.</p><p class="t">Statuses disappear after 24 hours and can be seen by everyone on AUR.</p>' },
+  privacy: { t: 'Privacy', r: () => '<p class="t">Your messages, photos and files are stored on the AUR server so you can read them on any device. They are <b></b> end-to-end encrypted, so avoid sharing passwords or sensitive information.</p><p class="t">Statuses disappear after 24 hours and can be seen by everyone on AUR.</p>' },
   chats: { t: 'Chats', r: () => `<h4>Theme</h4><div class="chips">${['dark', 'light', 'amoled', 'neon'].map(t => sc(S.theme === t, `set('theme','${t}')`, t)).join('')}</div>
     <h4>Accent colour</h4><div class="chips" id="ac">${ACC.map(a => sc(S.accent === a, `set('accent','${a}')`, '', `background:${a}`)).join('')}</div>
     <h4>Chat wallpaper</h4><div class="chips">${['doodle', 'dots', 'gradient', 'plain'].map(w => sc(S.wall === w, `set('wall','${w}')`, w)).join('')}</div>
