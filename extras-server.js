@@ -17,6 +17,14 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
   const card = (u, me) => { const x = db().users[u], f = fw(u);
     return { username: u, pic: x.pic || '', about: x.about || '', followers: f.followers.length, following: f.following.length, iFollow: f.followers.includes(me), followsMe: f.following.includes(me) }; };
 
+  // ---- posts (Instagram-style) ----
+  const pview = (p, me) => ({ id: p.id, user: p.user, mediaId: p.mediaId, caption: p.caption, time: p.time, likes: p.likes.length, liked: p.likes.includes(me), comments: p.comments.slice(-80) });
+  const postsOf = (u, me) => (db().posts || []).filter(p => p.user === u).sort((a, b) => b.time - a.time).slice(0, 60).map(p => pview(p, me));
+  const feedFor = me => { const d = db(), f = new Set([me, ...(d.users[me].following || [])]);
+    return (d.posts || []).filter(p => f.has(p.user)).sort((a, b) => b.time - a.time).slice(0, 50).map(p => pview(p, me)); };
+  const dirty = (owner, actor) => new Set([...contactsOf(owner), actor]).forEach(u => emitTo(u, 'feedDirty', { owner }));
+  const postById = id => (db().posts || []).find(x => x.id === id);
+
   app.post('/api/upload', express.raw({ type: '*/*', limit: '6mb' }), async (req, res) => {
     if (!userOf(req) || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).end();
     const id = crypto.randomUUID(), mime = String(req.headers['x-mime'] || 'application/octet-stream').slice(0, 100);
@@ -87,11 +95,77 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
       delete d.users[me];
       Object.keys(d.tokens).forEach(t => { if (d.tokens[t] === me) delete d.tokens[t]; });
       d.msgs = d.msgs.filter(m => m.from !== me && m.to !== me);
+      (d.posts || []).filter(p => p.user === me).forEach(p => dropMedia(p.mediaId));
+      d.posts = (d.posts || []).filter(p => p.user !== me);
+      d.posts.forEach(p => { p.likes = p.likes.filter(x => x !== me); p.comments = p.comments.filter(c => c.user !== me); });
       d.statuses = (d.statuses || []).filter(x => x.user !== me);
+      (d.posts || []).filter(p => p.user === me).forEach(p => dropMedia(p.mediaId));
+      d.posts = (d.posts || []).filter(p => p.user !== me);
+      d.posts.forEach(p => { p.likes = p.likes.filter(x => x !== me); p.comments = p.comments.filter(c => c.user !== me); });
       Object.keys(d.users).forEach(u => { if (d.users[u].following) d.users[u].following = d.users[u].following.filter(x => x !== me); });
       save();
       c.forEach(u => { if (u !== me) { emitTo(u, 'userGone', { username: me }); sendStatuses(u); } });
       sockets.forEach(x => { x.emit('accountDeleted', {}); x.disconnect(true); });
+    });
+
+    const posts = () => { const d = db(); return d.posts = d.posts || []; };
+    const find = id => posts().find(x => x.id === id);
+    s.on('getPosts', ({ scope, user }) => {
+      const f = db().users[me].following || [];
+      let list = posts();
+      if (scope === 'feed') list = list.filter(p => p.user === me || f.includes(p.user));
+      else if (scope === 'user') list = list.filter(p => p.user === String(user));
+      s.emit('posts', { scope, user: scope === 'user' ? String(user) : '', list: list.slice().sort((a, b) => b.time - a.time).slice(0, 60) });
+    });
+    s.on('getProfile', u => { if (db().users[u]) s.emit('profileData', { ...card(u, me), posts: posts().filter(p => p.user === u).length }); });
+    s.on('newPost', ({ mediaId, caption }) => {
+      mediaId = String(mediaId || '').replace(/[^a-f0-9-]/g, '').slice(0, 40); if (!mediaId) return;
+      posts().push({ id: crypto.randomUUID(), user: me, mediaId, caption: String(caption || '').slice(0, 500), time: Date.now(), likes: [], comments: [] });
+      save(); io.emit('postsChanged');
+    });
+    s.on('likePost', id => { const p = find(id); if (!p) return; const i = p.likes.indexOf(me); if (i < 0) p.likes.push(me); else p.likes.splice(i, 1); save(); io.emit('postUpdate', p); });
+    s.on('commentPost', ({ id, text }) => {
+      const p = find(id); text = String(text || '').trim().slice(0, 300); if (!p || !text) return;
+      p.comments.push({ id: crypto.randomUUID(), user: me, text, time: Date.now() }); save(); io.emit('postUpdate', p);
+    });
+    s.on('delComment', ({ id, cid }) => {
+      const p = find(id), c = p && p.comments.find(x => x.id === cid);
+      if (!c || (c.user !== me && p.user !== me)) return;
+      p.comments = p.comments.filter(x => x.id !== cid); save(); io.emit('postUpdate', p);
+    });
+    s.on('delPost', id => {
+      const p = find(id); if (!p || p.user !== me) return;
+      db().posts = posts().filter(x => x.id !== id); dropMedia(p.mediaId); save(); io.emit('postDeleted', { id });
+    });
+
+    s.on('getFeed', () => s.emit('feed', feedFor(me)));
+    s.on('getProfile', u => {
+      if (!db().users[u]) return s.emit('profileData', { missing: u });
+      s.emit('profileData', { card: card(u, me), posts: postsOf(u, me) });
+    });
+    s.on('newPost', ({ mediaId, caption }) => {
+      const d = db(), mid = String(mediaId || '').replace(/[^a-f0-9-]/g, '').slice(0, 40); if (!mid) return;
+      d.posts = d.posts || [];
+      d.posts.push({ id: crypto.randomUUID(), user: me, mediaId: mid, caption: String(caption || '').slice(0, 500), time: Date.now(), likes: [], comments: [] });
+      save(); dirty(me, me);
+    });
+    s.on('likePost', id => {
+      const p = postById(id); if (!p) return;
+      const i = p.likes.indexOf(me); if (i < 0) p.likes.push(me); else p.likes.splice(i, 1);
+      save(); dirty(p.user, me);
+    });
+    s.on('commentPost', ({ id, text }) => {
+      const p = postById(id); text = String(text || '').trim().slice(0, 300); if (!p || !text) return;
+      p.comments.push({ id: crypto.randomUUID(), user: me, text, time: Date.now() }); save(); dirty(p.user, me);
+    });
+    s.on('delComment', ({ id, cid }) => {
+      const p = postById(id); const c = p && p.comments.find(x => x.id === cid);
+      if (!c || (c.user !== me && p.user !== me)) return;
+      p.comments = p.comments.filter(x => x.id !== cid); save(); dirty(p.user, me);
+    });
+    s.on('delPost', id => {
+      const d = db(), p = postById(id); if (!p || p.user !== me) return;
+      d.posts = d.posts.filter(x => x !== p); dropMedia(p.mediaId); save(); dirty(me, me);
     });
 
     s.on('search', q => {
@@ -101,7 +175,7 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
         .sort((a, b) => (b.startsWith(q) - a.startsWith(q)) || a.length - b.length).slice(0, 20).map(u => card(u, me)));
     });
     s.on('whois', u => { if (db().users[u]) s.emit('whoisResult', card(u, me)); });
-    const follow = (u, on) => {
+    const follow = (u, on, quiet) => {
       const d = db(); if (u === me || !d.users[u]) return;
       const l = d.users[me].following = d.users[me].following || [], i = l.indexOf(u);
       if (on && i < 0) l.push(u);
@@ -110,10 +184,12 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
       emitTo(me, 'follows', fw(me)); emitTo(u, 'follows', fw(u));
       emitTo(me, 'presence', pub(u)); emitTo(u, 'presence', pub(me));
       sendStatuses(me); sendStatuses(u);
-      s.emit('whoisResult', card(u, me));
+      if (quiet) s.emit('profileDirty', u); else s.emit('whoisResult', card(u, me));
     };
     s.on('follow', u => follow(String(u), true));
     s.on('unfollow', u => follow(String(u), false));
+    s.on('pfollow', u => follow(String(u), true, true));
+    s.on('punfollow', u => follow(String(u), false, true));
 
     s.on('postStatus', st => {
       if (!st) return;
