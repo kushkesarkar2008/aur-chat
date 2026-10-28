@@ -17,6 +17,13 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
   const card = (u, me) => { const x = db().users[u], f = fw(u);
     return { username: u, pic: x.pic || '', about: x.about || '', followers: f.followers.length, following: f.following.length, iFollow: f.followers.includes(me), followsMe: f.following.includes(me) }; };
 
+  // ---- notifications + suggestions ----
+  const notify = (to, n) => { const u = db().users[to]; if (!u || to === n.from) return;
+    u.notifs = [...(u.notifs || []), { id: crypto.randomUUID(), time: Date.now(), ...n }].slice(-60); emitTo(to, 'notifs', u.notifs); };
+  const suggestFor = me => { const d = db(), mine = d.users[me].following || [];
+    return Object.keys(d.users).filter(u => u !== me && !mine.includes(u)).map(u => { const f = fw(u).followers; return { u, mutual: mine.filter(x => f.includes(x)).length }; })
+      .sort((a, b) => b.mutual - a.mutual || Math.random() - .5).slice(0, 8).map(x => ({ ...card(x.u, me), mutual: x.mutual })); };
+
   // ---- posts (Instagram-style) ----
   const pview = (p, me) => ({ id: p.id, user: p.user, mediaId: p.mediaId, caption: p.caption, time: p.time, likes: p.likes.length, liked: p.likes.includes(me), comments: p.comments.slice(-80) });
   const postsOf = (u, me) => (db().posts || []).filter(p => p.user === u).sort((a, b) => b.time - a.time).slice(0, 60).map(p => pview(p, me));
@@ -55,6 +62,7 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
     const me = s.user;
     s.emit('statuses', statusesFor(me));
     s.emit('follows', fw(me));
+    s.emit('notifs', db().users[me].notifs || []);
 
     s.on('sendMedia', ({ to, text, media: m }) => {
       if (!m || !db().users[to] || !canChat(me, to)) return;
@@ -123,10 +131,10 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
       posts().push({ id: crypto.randomUUID(), user: me, mediaId, caption: String(caption || '').slice(0, 500), time: Date.now(), likes: [], comments: [] });
       save(); io.emit('postsChanged');
     });
-    s.on('likePost', id => { const p = find(id); if (!p) return; const i = p.likes.indexOf(me); if (i < 0) p.likes.push(me); else p.likes.splice(i, 1); save(); io.emit('postUpdate', p); });
+    s.on('likePost', id => { const p = find(id); if (!p) return; const i = p.likes.indexOf(me); if (i < 0) { p.likes.push(me); notify(p.user, { type: 'like', from: me, postId: p.id }); } else p.likes.splice(i, 1); save(); io.emit('postUpdate', p); });
     s.on('commentPost', ({ id, text }) => {
       const p = find(id); text = String(text || '').trim().slice(0, 300); if (!p || !text) return;
-      p.comments.push({ id: crypto.randomUUID(), user: me, text, time: Date.now() }); save(); io.emit('postUpdate', p);
+      p.comments.push({ id: crypto.randomUUID(), user: me, text, time: Date.now() }); notify(p.user, { type: 'comment', from: me, postId: p.id, text: text.slice(0, 80) }); save(); io.emit('postUpdate', p);
     });
     s.on('delComment', ({ id, cid }) => {
       const p = find(id), c = p && p.comments.find(x => x.id === cid);
@@ -138,6 +146,8 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
       db().posts = posts().filter(x => x.id !== id); dropMedia(p.mediaId); save(); io.emit('postDeleted', { id });
     });
 
+    s.on('getExplore', () => s.emit('explore', (db().posts || []).slice().sort((a, b) => b.time - a.time).slice(0, 60).map(p => pview(p, me))));
+    s.on('getSuggest', () => s.emit('suggest', suggestFor(me)));
     s.on('getFeed', () => s.emit('feed', feedFor(me)));
     s.on('getProfile', u => {
       if (!db().users[u]) return s.emit('profileData', { missing: u });
@@ -178,7 +188,7 @@ module.exports = ({ app, io, db, save, online, emitTo, pub, contactsOf, canChat,
     const follow = (u, on, quiet) => {
       const d = db(); if (u === me || !d.users[u]) return;
       const l = d.users[me].following = d.users[me].following || [], i = l.indexOf(u);
-      if (on && i < 0) l.push(u);
+      if (on && i < 0) { l.push(u); notify(u, { type: 'follow', from: me }); }
       if (!on && i >= 0) l.splice(i, 1);
       save();
       emitTo(me, 'follows', fw(me)); emitTo(u, 'follows', fw(u));
