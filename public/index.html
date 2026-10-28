@@ -2,6 +2,7 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AUR</title>
+<link rel="icon" href="/logo.png">
 <style>
 :root{--bg:#111b21;--panel:#202c33;--chatbg:#0b141a;--in:#202c33;--out:#005c4b;--text:#e9edef;--sub:#8696a0;--line:#222d34;--field:#2a3942;--accent:#00a884;--fs:14.5px}
 [data-theme=light]{--bg:#fff;--panel:#f0f2f5;--chatbg:#efeae2;--in:#fff;--out:#d9fdd3;--text:#111b21;--sub:#667781;--line:#e9edef;--field:#fff}
@@ -290,4 +291,301 @@ if (localStorage.aur) { try { start(JSON.parse(localStorage.aur)); } catch (e) {
 <script src="/social.js"></script>
 <script src="/manage.js"></script>
 <script src="/insta.js"></script>
+<script src="/ig2.js"></script>
+<script src="/ig3.js"></script>
+</body></html><!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AUR</title>
+<link rel="icon" href="/logo.png">
+<style>
+:root{--bg:#111b21;--panel:#202c33;--chatbg:#0b141a;--in:#202c33;--out:#005c4b;--text:#e9edef;--sub:#8696a0;--line:#222d34;--field:#2a3942;--accent:#00a884;--fs:14.5px}
+[data-theme=light]{--bg:#fff;--panel:#f0f2f5;--chatbg:#efeae2;--in:#fff;--out:#d9fdd3;--text:#111b21;--sub:#667781;--line:#e9edef;--field:#fff}
+[data-theme=amoled]{--bg:#000;--panel:#121212;--chatbg:#000;--in:#1a1a1a;--out:#004d40;--line:#1f1f1f;--field:#1c1c1c}
+[data-theme=neon]{--bg:#0a0a1a;--panel:#14142e;--chatbg:#070714;--in:#1a1a3a;--out:#3a0f6b;--line:#262650;--field:#1d1d42;--sub:#9aa0d6}
+*{box-sizing:border-box;margin:0;font-family:"Segoe UI",Helvetica,Arial,sans-serif}
+html,body{height:100%;background:var(--chatbg);color:var(--text)}
+[hidden]{display:none!important}
+button,input,select{font-size:15px;border:0;outline:0;color:inherit}button{cursor:pointer;background:none}
+body.noanim *{animation:none!important;transition:none!important}
+body.no3d .scene,body.no3d .card{transform:none!important}body.no3d .scene{display:none}
+/* login */
+#login{height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg);position:relative;overflow:hidden;perspective:900px}
+.blob{position:absolute;width:340px;height:340px;border-radius:50%;filter:blur(80px);opacity:.35;background:var(--accent);animation:float 14s ease-in-out infinite alternate}
+.b1{top:-80px;left:-60px}.b2{bottom:-100px;right:-60px;background:#7e68d9;animation-delay:-6s}
+@keyframes float{to{transform:translate(120px,80px) scale(1.2)}}
+.card{position:relative;display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px;border-radius:20px;background:var(--panel);box-shadow:0 20px 60px #0007;transition:transform .15s;animation:rise .7s both}
+@keyframes rise{from{opacity:0;transform:translateY(40px) rotateX(20deg)}}
+.card h1{font-size:40px;letter-spacing:6px;color:var(--accent)}.card p{color:var(--sub);font-size:14px}
+.card input{width:280px;padding:13px;border-radius:10px;background:var(--field)}
+.go{width:280px;padding:13px;border-radius:24px;background:var(--accent)!important;color:#fff;font-weight:600;transition:transform .15s}.go:hover{transform:translateY(-2px) scale(1.03)}
+.alt{color:var(--accent)}#err{color:#f15c6d;min-height:18px;font-size:13px}
+.scene{width:90px;height:90px;perspective:600px;margin:30px 0 40px}
+.cube{width:90px;height:90px;position:relative;transform-style:preserve-3d;animation:spin 12s linear infinite}
+.cube div{position:absolute;width:90px;height:90px;display:grid;place-items:center;font-size:30px;font-weight:700;color:#fff;background:var(--accent);opacity:.9;border:2px solid #fff4}
+@keyframes spin{from{transform:rotateX(-20deg) rotateY(0)}to{transform:rotateX(-20deg) rotateY(360deg)}}
+/* layout */
+#app{height:100%;display:flex;max-width:1600px;margin:auto}
+#side{width:30%;min-width:320px;max-width:440px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg);position:relative;overflow:hidden}
+#top{padding:10px 14px;background:var(--panel);display:flex;justify-content:space-between;align-items:center;height:59px}
+#top .l{display:flex;align-items:center;gap:12px;font-weight:600;cursor:pointer}
+#top button{color:var(--sub);padding:6px 10px;border-radius:8px;font-size:14px;transition:background .2s}#top button:hover{background:var(--field)}
+#q{margin:8px 12px 4px;padding:9px 14px;border-radius:10px;background:var(--panel)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chips button{background:var(--panel);color:var(--sub);padding:7px 14px;border-radius:16px;font-size:13px;transition:all .2s}
+.chips button.on{background:var(--accent);color:#fff;transform:scale(1.05)}
+#chips{padding:8px 12px}
+#list{flex:1;overflow:auto}
+.row{display:flex;gap:14px;padding:0 14px;cursor:pointer;align-items:center;height:72px;transition:background .2s,transform .2s}
+.row:hover,.row.on{background:var(--panel)}.row:hover{transform:translateX(3px)}
+.row .in{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:center;gap:4px;border-bottom:1px solid var(--line)}
+.line{display:flex;justify-content:space-between;align-items:center;gap:8px}.line b{font-weight:400;font-size:17px}
+.line small{color:var(--sub);font-size:12px}.line small.un{color:var(--accent)}
+.line span{color:var(--sub);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:3px}
+.line em{background:var(--accent);color:#fff;border-radius:10px;min-width:20px;height:20px;padding:0 6px;font-size:12px;font-weight:600;font-style:normal;display:grid;place-items:center}
+.av{width:49px;height:49px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:19px;position:relative;flex:none;color:#fff}
+.av.s{width:40px;height:40px;font-size:16px}.av.xl{width:110px;height:110px;font-size:44px}
+.av i{position:absolute;right:0;bottom:1px;width:12px;height:12px;border-radius:50%;background:#00e676;border:2px solid var(--bg)}
+.empty{padding:30px 20px;color:var(--sub);text-align:center;font-size:14px}
+/* settings drawer */
+#set{position:absolute;inset:0;background:var(--bg);transform:translateX(-100%);transition:transform .35s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;z-index:5}
+#set.show{transform:none}
+.sh2{display:flex;gap:14px;align-items:center;padding:14px;background:var(--panel);font-weight:600;height:59px}.sh2 button{font-size:22px}
+.sc{flex:1;overflow:auto;padding:16px}.sc h4{margin:18px 0 8px;color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:1px}
+.pp{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;color:var(--sub);font-size:13px}.pp .av{transition:transform .3s}.pp:hover .av{transform:rotateY(20deg) scale(1.06)}
+#about{width:100%;margin-top:14px;padding:11px 14px;border-radius:10px;background:var(--panel)}
+#ac button{width:34px;height:34px;padding:0;border-radius:50%;border:3px solid transparent}#ac button.on{border-color:var(--text);transform:scale(1.15)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+/* chat */
+#chat{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--chatbg)}
+#welcome{margin:auto;color:var(--sub);text-align:center;padding:20px}
+#welcome .scene{margin:30px auto 60px;transform:scale(1.5)}#welcome h2{color:var(--text);font-weight:300;font-size:30px;margin-bottom:8px}
+#box{height:100%;display:flex;flex-direction:column}#box.enter{animation:slideIn .35s cubic-bezier(.2,.8,.2,1)}
+@keyframes slideIn{from{opacity:0;transform:translateX(40px)}}
+#head{padding:9px 16px;background:var(--panel);display:flex;gap:14px;align-items:center;height:59px}
+#head .who{cursor:pointer;display:flex;gap:14px;align-items:center;flex:1}
+#head b{font-weight:400;font-size:16px;display:block}#head small{display:block;color:var(--sub);font-size:13px}
+#back{display:none;font-size:22px}
+#msgs{flex:1;overflow:auto;padding:14px 7%;display:flex;flex-direction:column;perspective:900px;background-color:var(--chatbg)}
+#msgs[data-wall=dots]{background-image:radial-gradient(#8696a01a 1.2px,transparent 1.2px);background-size:26px 26px}
+#msgs[data-wall=gradient]{background-image:linear-gradient(160deg,var(--chatbg),color-mix(in srgb,var(--accent) 22%,var(--chatbg)))}
+.day{align-self:center;margin:10px 0}.day span{background:var(--panel);color:var(--sub);font-size:12.5px;padding:5px 12px;border-radius:8px}
+.m{max-width:65%;padding:6px 8px 6px 9px;border-radius:8px;font-size:var(--fs);line-height:1.35;position:relative;margin-top:2px;word-wrap:break-word;white-space:pre-wrap;box-shadow:0 1px 1px #0004;transition:transform .2s}
+.m:hover{transform:translateZ(20px) scale(1.02)}
+.m.new{animation:pop .4s cubic-bezier(.2,.9,.3,1.2)}body.no3d .m.new{animation-name:fade}body.no3d .m:hover{transform:none}
+@keyframes pop{from{opacity:0;transform:rotateX(-35deg) translateY(18px) scale(.85)}}@keyframes fade{from{opacity:0}}
+.m.in{background:var(--in);align-self:flex-start;transform-origin:left bottom}.m.out{background:var(--out);align-self:flex-end;transform-origin:right bottom}
+.m.first{margin-top:10px}.m.first.in{border-top-left-radius:0}.m.first.out{border-top-right-radius:0}
+.m.first.in::before{content:'';position:absolute;top:0;left:-8px;border-right:8px solid var(--in);border-bottom:8px solid transparent}
+.m.first.out::before{content:'';position:absolute;top:0;right:-8px;border-left:8px solid var(--out);border-bottom:8px solid transparent}
+.m small{float:right;margin:7px 0 -3px 12px;color:var(--sub);font-size:11px;display:flex;align-items:center;gap:3px;height:15px}.tk{display:inline-flex}
+#emo{display:flex;flex-wrap:wrap;gap:2px;padding:8px 12px;background:var(--bg);border-top:1px solid var(--line);animation:fade .2s}
+#emo button{font-size:24px;width:38px;height:38px;border-radius:8px;transition:transform .15s}#emo button:hover{background:var(--panel);transform:scale(1.3)}
+#form{display:flex;gap:10px;padding:10px 14px;background:var(--panel);align-items:center}
+#t{flex:1;padding:11px 16px;border-radius:10px;background:var(--field)}
+#form button{font-size:24px;color:var(--sub);width:42px;height:42px;border-radius:50%;transition:transform .2s}
+#form button.send{background:var(--accent);color:#fff;font-size:18px}#form button.send:hover{transform:rotate(-20deg) scale(1.12)}#form button.send:active{transform:scale(.85)}
+#modal{position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:9;perspective:800px;animation:fade .2s}
+.mc{background:var(--bg);padding:30px 40px;border-radius:20px;text-align:center;animation:flip .5s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;align-items:center;gap:8px;max-width:90%}
+@keyframes flip{from{opacity:0;transform:rotateY(-80deg) scale(.7)}}.mc p{color:var(--text)}.mc small{color:var(--sub)}
+@media(max-width:700px){#side{width:100%;max-width:none}#chat{display:none}.open #side{display:none}.open #chat{display:flex}#back{display:block}#msgs{padding:10px}.m{max-width:82%}}
+</style></head>
+<body>
+<div id="login"><div class="blob b1"></div><div class="blob b2"></div>
+  <div class="card" id="card"><div class="scene" id="cube1"></div><h1>AUR</h1><p>Fast, real-time messaging</p>
+    <input id="u" placeholder="Username" autocapitalize="off"><input id="p" type="password" placeholder="Password">
+    <div id="err"></div><button class="go" onclick="auth('login')">Log in</button>
+    <button class="alt" onclick="auth('register')">Create new account</button></div></div>
+<div id="app" hidden>
+  <div id="side">
+    <div id="top"><div class="l" onclick="tog(1)"><span id="mav"></span><span id="me"></span></div><span><button onclick="tog(1)">⚙ Settings</button><button onclick="logout()">Logout</button></span></div>
+    <input id="q" placeholder="Search or start new chat" oninput="renderList()">
+    <div id="chips" class="chips"><button class="on" id="fa" onclick="setF('all')">All</button><button id="fu" onclick="setF('unread')">Unread</button></div>
+    <div id="list"></div>
+    <div id="set"><div class="sh2"><button onclick="tog(0)">←</button>Settings</div>
+      <div class="sc"><label class="pp"><span id="spic"></span><input type="file" id="pf" accept="image/*" hidden onchange="pic(this)">Tap to change profile photo</label>
+        <input id="about" placeholder="About (e.g. Hey there! I am using AUR)" maxlength="100" onchange="S.about=this.value;save();sendProfile()">
+        <h4>Theme</h4><div class="chips" id="th"></div><h4>Accent colour</h4><div class="chips" id="ac"></div>
+        <h4>Chat wallpaper</h4><div class="chips" id="wl"></div><h4>Message text size</h4><input type="range" min="12" max="20" id="fs" oninput="S.fs=+this.value;save()">
+        <h4>Effects &amp; sound</h4><div class="chips" id="tg"></div></div></div>
+  </div>
+  <div id="chat">
+    <div id="welcome"><div class="scene" id="cube2"></div><h2>AUR</h2><p>Pick a contact to start chatting.</p></div>
+    <div id="box" hidden>
+      <div id="head"><button id="back" onclick="closeChat()">←</button><div class="who" onclick="openInfo()"><span id="hav"></span><div><b id="hn"></b><small id="hs"></small></div></div></div>
+      <div id="msgs"></div><div id="emo" hidden></div>
+      <form id="form" onsubmit="send(event)"><button type="button" onclick="$('emo').hidden=!$('emo').hidden">🙂</button>
+        <input id="t" placeholder="Type a message" autocomplete="off"><button class="send">➤</button></form>
+    </div>
+  </div>
+</div>
+<div id="modal" hidden onclick="this.hidden=true"><div class="mc" id="mc"></div></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const rank = { sent: 0, delivered: 1, read: 2 };
+const COLORS = ['#6a7175', '#00a884', '#3b8fd9', '#d6559f', '#d98c1f', '#7e68d9', '#d9604a'];
+const ACC = ['#00a884', '#3b8fd9', '#d6559f', '#7e68d9', '#d98c1f', '#e53935'];
+const EMOJI = '😀 😂 🤣 😊 😍 😘 😎 🤔 😢 😭 😡 👍 👎 🙏 👏 🔥 ❤️ 💯 🎮 🏆 🎧 😴 🤝 🙌 😅 😉 🥳 💀 👀 ✨'.split(' ');
+const FACES = ['A', 'U', 'R', '💬', '🎮', '⚡'], TR = ['', 'rotateY(180deg)', 'rotateY(90deg)', 'rotateY(-90deg)', 'rotateX(90deg)', 'rotateX(-90deg)'];
+const CUBE = '<div class="cube">' + FACES.map((f, i) => `<div style="transform:${TR[i]} translateZ(45px)">${f}</div>`).join('') + '</div>';
+const DEF = { theme: 'dark', accent: '#00a884', anim: 1, fx3d: 1, sound: 1, fs: 14.5, wall: 'dots', pic: '', about: '' };
+let S = { ...DEF, ...JSON.parse(localStorage.aurSet || '{}') };
+let me, sock, peer = null, users = {}, msgs = [], ids = new Set(), fresh = new Set(), filter = 'all', typingTimer, lastTyping = 0;
+
+const esc = s => s.replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+const T = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+const isYest = t => sameDay(t, Date.now() - 864e5);
+const fullDate = t => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
+const dayLabel = t => sameDay(t, Date.now()) ? 'Today' : isYest(t) ? 'Yesterday' : fullDate(t);
+const listTime = t => sameDay(t, Date.now()) ? T(t) : isYest(t) ? 'Yesterday' : new Date(t).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' });
+const seen = u => u.online ? 'online' : 'last seen ' + (sameDay(u.lastSeen, Date.now()) ? 'today at ' + T(u.lastSeen) : isYest(u.lastSeen) ? 'yesterday at ' + T(u.lastSeen) : fullDate(u.lastSeen));
+const col = u => COLORS[[...u].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
+const av = (u, on, s) => { const p = u === me ? S.pic : (users[u] || {}).pic;
+  return `<div class="av ${s || ''}" style="background:${p ? `url('${p}') center/cover` : col(u)}">${p ? '' : u[0].toUpperCase()}${on ? '<i></i>' : ''}</div>`; };
+const thread = u => msgs.filter(m => m.from === u || m.to === u);
+const tick = m => { const one = '<path d="M1 6.5 4.5 10 11 2"/>', two = one + '<path d="M7 9.5 8 10 14.5 2"/>';
+  return `<span class="tk" style="color:${m.status === 'read' ? '#53bdeb' : 'var(--sub)'}"><svg viewBox="0 0 16 12" width="16" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${m.status === 'sent' ? one : two}</svg></span>`; };
+function beep() { if (!S.sound) return;
+  try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
+    o.connect(g); g.connect(a.destination); g.gain.value = .05; o.frequency.value = 880; o.start(); o.stop(a.currentTime + .12); } catch (e) {} }
+
+/* settings */
+function apply() {
+  const r = document.documentElement;
+  r.dataset.theme = S.theme; r.style.setProperty('--accent', S.accent); r.style.setProperty('--fs', S.fs + 'px');
+  document.body.classList.toggle('noanim', !S.anim); document.body.classList.toggle('no3d', !S.fx3d);
+  $('msgs').dataset.wall = S.wall;
+  if (me) { $('mav').innerHTML = av(me, false, 's'); $('spic').innerHTML = av(me, false, 'xl'); }
+}
+function save() { localStorage.aurSet = JSON.stringify(S); apply(); if (me) { renderList(); if (peer) renderHead(); } }
+function set(k, v) { S[k] = v; save(); renderSettings(); }
+function renderSettings() {
+  const chip = (on, fn, label, style) => `<button class="${on ? 'on' : ''}" style="${style || ''}" onclick="${fn}">${label}</button>`;
+  $('th').innerHTML = ['dark', 'light', 'amoled', 'neon'].map(t => chip(S.theme === t, `set('theme','${t}')`, t)).join('');
+  $('ac').innerHTML = ACC.map(c => chip(S.accent === c, `set('accent','${c}')`, '', `background:${c}`)).join('');
+  $('wl').innerHTML = ['dots', 'plain', 'gradient'].map(w => chip(S.wall === w, `set('wall','${w}')`, w)).join('');
+  $('tg').innerHTML = [['anim', 'Animations'], ['fx3d', '3D effects'], ['sound', 'Message sound']].map(([k, l]) => chip(S[k], `set('${k}',${S[k] ? 0 : 1})`, l + (S[k] ? ': ON' : ': OFF'))).join('');
+  $('fs').value = S.fs; $('about').value = S.about;
+}
+function tog(o) { $('set').classList.toggle('show', !!o); if (o) renderSettings(); }
+function sendProfile() { if (sock) sock.emit('profile', { pic: S.pic, about: S.about }); }
+function pic(inp) {
+  const f = inp.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { const im = new Image(); im.onload = () => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const s = Math.min(im.width, im.height);
+    c.getContext('2d').drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, 0, 0, 128, 128);
+    S.pic = c.toDataURL('image/jpeg', .8); save(); sendProfile(); }; im.src = r.result; };
+  r.readAsDataURL(f);
+}
+
+/* auth + socket */
+async function auth(mode) {
+  const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: $('u').value, password: $('p').value, mode }) });
+  const d = await r.json();
+  if (d.error) return ($('err').textContent = d.error);
+  localStorage.aur = JSON.stringify(d); start(d);
+}
+function logout() { localStorage.removeItem('aur'); location.reload(); }
+function start(d) {
+  me = d.username; $('login').hidden = true; $('app').hidden = false; $('me').textContent = me;
+  $('emo').innerHTML = EMOJI.map(e => `<button type="button" onclick="ins('${e}')">${e}</button>`).join('');
+  apply();
+  sock = io({ auth: { token: d.token } });
+  sock.on('connect_error', logout);
+  sock.on('init', ({ users: u, msgs: m }) => { users = u; m.forEach(add); renderList(); apply(); if (S.pic || S.about) sendProfile(); });
+  sock.on('presence', p => { users[p.username] = p; renderList(); if (p.username === peer) renderHead(); });
+  sock.on('msg', m => {
+    add(m); fresh.add(m.id);
+    if (m.from !== me && (m.from !== peer || document.hidden)) beep();
+    if (m.from === peer) markRead();
+    renderList(); renderMsgs();
+  });
+  sock.on('status', ({ with: w, status }) => {
+    msgs.forEach(m => { if (m.from === me && m.to === w && rank[status] > rank[m.status]) m.status = status; });
+    renderMsgs(); renderList();
+  });
+  sock.on('typing', ({ from }) => {
+    if (from !== peer) return;
+    $('hs').textContent = 'typing…'; clearTimeout(typingTimer); typingTimer = setTimeout(renderHead, 2000);
+  });
+}
+function add(m) { if (!ids.has(m.id)) { ids.add(m.id); msgs.push(m); } }
+function setF(f) { filter = f; $('fa').className = f === 'all' ? 'on' : ''; $('fu').className = f === 'unread' ? 'on' : ''; renderList(); }
+
+/* render */
+function renderList() {
+  const q = $('q').value.toLowerCase(); let total = 0;
+  const rows = Object.keys(users).filter(u => u !== me && u.includes(q)).map(u => {
+    const t = thread(u), n = t.filter(m => m.from === u && m.status !== 'read').length; total += n;
+    return { u, l: t[t.length - 1], n };
+  }).filter(r => filter === 'all' || r.n).sort((a, b) => ((b.l && b.l.time) || 0) - ((a.l && a.l.time) || 0));
+  $('list').innerHTML = rows.map(r => `<div class="row ${r.u === peer ? 'on' : ''}" onclick="openChat('${r.u}')">${av(r.u, users[r.u].online)}
+    <div class="in"><div class="line"><b>${r.u}</b><small class="${r.n ? 'un' : ''}">${r.l ? listTime(r.l.time) : ''}</small></div>
+    <div class="line"><span>${r.l && r.l.from === me ? tick(r.l) : ''}${r.l ? esc(r.l.text) : esc(users[r.u].about || 'Say hi 👋')}</span>${r.n ? `<em>${r.n}</em>` : ''}</div></div></div>`).join('')
+    || `<p class="empty">${filter === 'unread' ? 'No unread chats' : 'No other users yet. Ask a friend to join AUR!'}</p>`;
+  document.title = total ? `(${total}) AUR` : 'AUR';
+}
+function renderHead() {
+  $('hav').innerHTML = av(peer, false, 's'); $('hn').textContent = peer;
+  $('hs').textContent = seen(users[peer] || { online: false, lastSeen: Date.now() });
+}
+function renderMsgs() {
+  if (!peer) return;
+  let h = '', prevDay = null, prevFrom = '';
+  thread(peer).forEach(m => {
+    if (prevDay === null || !sameDay(prevDay, m.time)) { h += `<div class="day"><span>${dayLabel(m.time)}</span></div>`; prevFrom = ''; }
+    prevDay = m.time;
+    const first = m.from !== prevFrom; prevFrom = m.from;
+    h += `<div class="m ${m.from === me ? 'out' : 'in'} ${first ? 'first' : ''} ${fresh.has(m.id) ? 'new' : ''}">${esc(m.text)}<small>${T(m.time)}${m.from === me ? tick(m) : ''}</small></div>`;
+  });
+  fresh.clear();
+  const el = $('msgs'); el.innerHTML = h; el.scrollTop = el.scrollHeight;
+}
+function markRead() {
+  if (!peer || document.hidden) return;
+  let c = 0;
+  thread(peer).forEach(m => { if (m.from === peer && m.status !== 'read') { m.status = 'read'; c++; } });
+  if (c) { sock.emit('read', peer); renderList(); }
+}
+function openChat(u) {
+  peer = u; document.body.classList.add('open');
+  $('welcome').hidden = true; $('box').hidden = false; $('emo').hidden = true; tog(0);
+  const b = $('box'); b.classList.remove('enter'); void b.offsetWidth; b.classList.add('enter');
+  renderHead(); renderMsgs(); markRead(); renderList(); $('t').focus();
+}
+function closeChat() { document.body.classList.remove('open'); peer = null; renderList(); }
+function openInfo() {
+  const u = users[peer] || { online: false, lastSeen: Date.now() };
+  $('mc').innerHTML = `${av(peer, u.online, 'xl')}<h3>${peer}</h3><p>${esc(u.about || 'Hey there! I am using AUR')}</p><small>${seen(u)}</small>`;
+  $('modal').hidden = false;
+}
+function ins(e) { $('t').value += e; $('t').focus(); }
+function send(e) {
+  e.preventDefault();
+  const text = $('t').value.trim(); if (!text || !peer) return;
+  sock.emit('send', { to: peer, text }); $('t').value = ''; $('emo').hidden = true;
+}
+$('t').addEventListener('input', () => { if (peer && Date.now() - lastTyping > 1000) { lastTyping = Date.now(); sock.emit('typing', peer); } });
+$('p').addEventListener('keydown', e => { if (e.key === 'Enter') auth('login'); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) markRead(); });
+$('cube1').innerHTML = CUBE; $('cube2').innerHTML = CUBE;
+document.addEventListener('mousemove', e => {
+  if (!S.fx3d || $('login').hidden) return;
+  $('card').style.transform = `rotateY(${(e.clientX / innerWidth - .5) * 14}deg) rotateX(${-(e.clientY / innerHeight - .5) * 14}deg)`;
+});
+apply();
+if (localStorage.aur) { try { start(JSON.parse(localStorage.aur)); } catch (e) { logout(); } }
+</script>
+<script src="/extras.js"></script>
+<script src="/ui.js"></script>
+<script src="/social.js"></script>
+<script src="/manage.js"></script>
+<script src="/insta.js"></script>
+<script src="/ig2.js"></script>
+<script src="/ig3.js"></script>
 </body></html>
